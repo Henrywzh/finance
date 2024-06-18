@@ -1,19 +1,6 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
-
-df = pd.read_csv('~/PycharmProjects/algo_trading/finance/my_portfolio/my_portfolio.csv')
-
-price_df = pd.pivot(df, values='Close', index='Date', columns='Ticker')
-vol_df = pd.pivot(df, values='Volume', index='Date', columns='Ticker')
-
-
-# def calcualte_ma(price_list, period: int):
-#     if isinstance(price_list, pd.Series):
-#         return price_list.rolling(period).mean()
-#     elif isinstance(price_list, list):
-#         return
 
 
 def fast_slow(df_prev: pd.DataFrame, fast: int, slow: int, ticker_name: str = None):
@@ -103,6 +90,10 @@ def rsi(df_prev: pd.DataFrame, period: int = 14, ticker_name: str = None):
         ticker_name = 'Close'
     _df = pd.DataFrame(df_prev[ticker_name])
 
+    """
+    RSI is more useful in trending market
+    """
+
     _df['Diff'] = _df[ticker_name].diff()
     _df['Gain'] = np.where(_df['Diff'] > 0, _df['Diff'], 0)
     _df['Loss'] = np.where(_df['Diff'] < 0, -_df['Diff'], 0)
@@ -162,56 +153,58 @@ def macd(df_prev: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9,
     return _df
 
 
-def plot_macd(df_prev: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9, ticker_name: str = None):
-    _df = macd(df_prev, fast, slow, signal, ticker_name=ticker_name)
+def stochastic_oscillator(df_prev: pd.DataFrame, period: int = 14, ticker_name: str = None, type: str = 'fast'):
+    if period <= 0: raise ValueError('Fast must be greater than 0')
+    if ticker_name is None:
+        ticker_name = 'Close'
+    _df = pd.DataFrame(df_prev[ticker_name])
 
-    plt.figure(figsize=(12, 6))
-    x = pd.to_datetime(_df.index.values)
+    """
+    Assumption of the indicator: 
+    closing prices should move in the same direction as the current trend
+    
+    - More useful in range-bound markets
+    
+    K: Fast 
+    D: Slow
+    """
 
-    plt.subplot(2, 1, 1)
-    plt.plot(x, _df[ticker_name], label=ticker_name)
-    plt.legend()
+    _df[f'L{period}'] = _df[ticker_name].rolling(period).min()
+    _df[f'H{period}'] = _df[ticker_name].rolling(period).max()
 
-    plt.subplot(2, 1, 2)
-    plt.plot(x, _df['MACD'], label='MACD')
-    plt.plot(x, _df['Signal Line'], label='Signal Line')
-    plt.bar(x, _df['MACD'] - _df['Signal Line'], label='MACD - Signal')
-    plt.legend()
-    plt.show()
+    _df['K'] = (_df[ticker_name] - _df[f'L{period}']) / (_df[f'H{period}'] - _df[f'L{period}']) * 100
+    if type != 'fast':
+        _df['D'] = _df['K'].rolling(3).mean()
 
-
-
-
-
-
-strategies = {}
-FAST = 5
-SLOW = 20
-ticker_x: str = price_df.columns.values[0]
-x_MA = fast_slow(price_df, fast=FAST, slow=SLOW, ticker_name=ticker_x)
-x_EMA = ema_fast_slow(price_df, fast=FAST, slow=SLOW, ticker_name=ticker_x)
-x_buy_hold = buy_and_hold(price_df, ticker_name=ticker_x)
-
-x_rsi = rsi(price_df, ticker_name=ticker_x)
-x_rsi_2 = rsi_2(price_df, ticker_name=ticker_x)
-
-x_macd = macd(price_df, ticker_name=ticker_x)
-plot_macd(price_df, ticker_name=ticker_x)
+    return _df
 
 
-# plt.plot(pd.to_datetime(x_macd.index.values[600:]), x_macd['MACD'][600:], label='MACD')
-# plt.plot(pd.to_datetime(x_macd.index.values[600:]), x_macd['Signal Line'][600:], label='Signal')
-# plt.legend()
-# plt.show()
+def mfi(df_raw: pd.DataFrame, ticker_name: str, period: int = 14):  # money flow index
+    """
+    :param df_raw: must be raw dataframe consisting both price and volume
+    :param period: 14 as default
+    :param ticker_name:
+    :return: dataframe
+    """
 
-# strategies['MA Fast and Slow'] = x_MA
-# strategies['EMA Fast and Slow'] = x_EMA
-# strategies['Buy and Hold'] = x_buy_hold
+    if period <= 0: raise ValueError('Fast must be greater than 0')
 
-# for s in strategies:
-#     plt.plot(pd.to_datetime(strategies[s].index.values), strategies[s]['Strategy Return'], label=s)
-#
-# plt.legend()
-# plt.xlabel('Date')
-# plt.ylabel('Strategy Return')
-# plt.show()
+    price_df = df_raw.pivot(index="Date", columns="Ticker", values="Close")
+    volume_df = df_raw.pivot(index="Date", columns="Ticker", values="Volume")
+    high_df = df_raw.pivot(index="Date", columns="Ticker", values="High")
+    low_df = df_raw.pivot(index="Date", columns="Ticker", values="Low")
+
+    _df = pd.DataFrame(price_df[ticker_name])
+    _df['High'] = high_df[ticker_name]
+    _df['Low'] = low_df[ticker_name]
+    _df['Volume'] = volume_df[ticker_name]
+    _df['Typical Price'] = (_df['High'] + _df[ticker_name] + _df['Low']) / 3
+    _df['+ Money Flow'] = np.where(_df['Typical Price'].diff() > 0, _df['Typical Price'] * _df['Volume'], 0)
+    _df['- Money Flow'] = np.where(_df['Typical Price'].diff() < 0, -_df['Typical Price'] * _df['Volume'], 0)
+    _df['Period + Money Flow'] = _df['+ Money Flow'].rolling(period).sum()
+    _df['Period - Money Flow'] = _df['- Money Flow'].rolling(period).sum()
+    _df['Money Flow Ratio'] = _df['Period + Money Flow'] / -_df['Period - Money Flow']
+    _df['Money Flow Index'] = 100 - 100 / (1 + _df['Money Flow Ratio'])
+
+    return _df
+
