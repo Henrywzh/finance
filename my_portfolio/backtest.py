@@ -1,7 +1,7 @@
-from display import *
-from strategies import *
+from finance_utils.strategies import *
+from finance_utils.display import *
 
-df = pd.read_csv('~/PycharmProjects/algo_trading/finance/my_portfolio/my_portfolio.csv')
+df = pd.read_csv('./csv_folder/my_portfolio2.csv')
 price_df = pd.pivot(df, values='Close', index='Date', columns='Ticker')
 vol_df = pd.pivot(df, values='Volume', index='Date', columns='Ticker')
 
